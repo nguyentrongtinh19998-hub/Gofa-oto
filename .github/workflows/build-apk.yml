@@ -24,17 +24,12 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: 4. Tự động khởi tạo cấu trúc dự án & tải dữ liệu Cà Mau - Đà Lạt
+      - name: 4. Tự động khởi tạo cấu trúc dự án Android
         run: |
           mkdir -p app/src/main/java/vn/navigation/gofaclone
           mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/assets
 
-          # Di chuyển file MainActivity.kt vào đúng thư mục chuẩn của Android
           cp MainActivity.kt app/src/main/java/vn/navigation/gofaclone/MainActivity.kt
-
-          # Tải trước dữ liệu điểm cảnh báo & biển báo tốc độ vùng Cà Mau -> Đà Lạt lưu vào gói cài đặt Offline
-          curl -s "https://overpass-api.de/api/interpreter?data=%5Bout%3Ajson%5D%5Btimeout%3A25%5D%3B%28node%5B%22highway%22%3D%22speed_camera%22%5D%288.55%2C104.45%2C12.10%2C108.65%29%3Bway%5B%22maxspeed%22%5D%5B%22highway%22~%22motorway%7Ctrunk%7Cprimary%22%5D%288.55%2C104.45%2C12.10%2C108.65%29%3B%29%3Bout%20 center%20300%3B" -o app/src/main/assets/camau_dalat_offline_warnings.json || echo "{}" > app/src/main/assets/camau_dalat_offline_warnings.json
 
           cat << 'EOF' > settings.gradle.kts
           pluginManagement {
@@ -83,7 +78,7 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   versionCode = 1
-                  versionName = "1.0-CaMau-DaLat"
+                  versionName = "3.1"
               }
 
               compileOptions {
