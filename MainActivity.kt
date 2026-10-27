@@ -13,8 +13,10 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -105,7 +107,6 @@ data class SpeedCameraNode(
     val roadType: RoadType
 )
 
-// Dữ liệu điểm POI chuẩn sẵn (không sợ lỗi mạng) bao gồm Cà Mau tới Đà Lạt và các trạm/quán xá
 val PREBUILT_PLACES = listOf(
     PlaceSearchResult("TP. Đà Lạt, Lâm Đồng", 11.9404, 108.4583),
     PlaceSearchResult("Chợ Đà Lạt, Nguyễn Thị Minh Khai, Phường 1, Đà Lạt", 11.9413, 108.4357),
@@ -118,8 +119,7 @@ val PREBUILT_PLACES = listOf(
     PlaceSearchResult("TP. Cần Thơ (Bến Ninh Kiều)", 10.0341, 105.7839),
     PlaceSearchResult("Cao tốc Mỹ Thuận - Cần Thơ", 10.2541, 105.8950),
     PlaceSearchResult("TP. Sóc Trăng, Sóc Trăng", 9.6025, 105.9739),
-    PlaceSearchResult("TP. Bạc Liêu (Khu lưu niệm nghệ thuật đờn ca tài tử)", 9.2941, 105.7278),
-    PlaceSearchResult("Chợ trung tâm TP. Bạc Liêu", 9.2915, 105.7252),
+    PlaceSearchResult("TP. Bạc Liêu", 9.2941, 105.7278),
     PlaceSearchResult("Cột mốc Mũi Cà Mau, Đất Mũi, Cà Mau", 8.6231, 104.7925),
     PlaceSearchResult("TP. Cà Mau, Cà Mau", 9.1768, 105.1524),
     PlaceSearchResult("Trạm dừng chân Mekong Rest Stop (Tiền Giang)", 10.3842, 106.3120)
@@ -148,7 +148,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val osmConfig = Configuration.getInstance()
-        osmConfig.userAgentValue = "GofaOtoVietnamNavigation/3.0"
+        osmConfig.userAgentValue = "GofaOtoVietnamNavigation/3.1"
         val baseDir = File(cacheDir, "osmdroid")
         val tileDir = File(baseDir, "tiles")
         baseDir.mkdirs()
@@ -170,7 +170,7 @@ fun GofaOnlineNavigationApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var userLocation by remember { mutableStateOf(GeoPoint(9.2941, 105.7278)) } // Mặc định Bạc Liêu
+    var userLocation by remember { mutableStateOf(GeoPoint(9.2941, 105.7278)) }
     var hasGpsFix by remember { mutableStateOf(false) }
     var vehicleBearing by remember { mutableFloatStateOf(0f) }
     var followUserGps by remember { mutableStateOf(true) }
@@ -185,7 +185,6 @@ fun GofaOnlineNavigationApp() {
     var isVoiceEnabled by remember { mutableStateOf(true) }
     var showCamerasOnMap by remember { mutableStateOf(true) }
 
-    // Dialogs & Sheets
     var showSearchSheet by remember { mutableStateOf(false) }
     var showRouteOptionsSheet by remember { mutableStateOf(false) }
     var showStepsSheet by remember { mutableStateOf(false) }
@@ -194,22 +193,18 @@ fun GofaOnlineNavigationApp() {
     var longClickGeoPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var longClickAddressName by remember { mutableStateOf("") }
 
-    // Search fields
     var startInputText by remember { mutableStateOf("Vị trí GPS hiện tại của tôi") }
     var destInputText by remember { mutableStateOf("") }
     var selectedStartPoint by remember { mutableStateOf<PlaceSearchResult?>(null) }
     var selectedDestPoint by remember { mutableStateOf<PlaceSearchResult?>(null) }
     var searchSuggestions by remember { mutableStateOf<List<PlaceSearchResult>>(PREBUILT_PLACES) }
     var isSelectingStartField by remember { mutableStateOf(false) }
-    var isLoadingSearch by remember { mutableStateOf(false) }
     var isLoadingRoute by remember { mutableStateOf(false) }
 
-    // Route options & active route
     var availableRoutes by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
     var activeRoute by remember { mutableStateOf<RouteOption?>(null) }
     var nextStepInstruction by remember { mutableStateOf<String?>(null) }
 
-    // Driving options
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidHighways by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
@@ -223,7 +218,7 @@ fun GofaOnlineNavigationApp() {
             SpeedCameraNode("MT_CT", "Cao tốc Mỹ Thuận - Cần Thơ", 10.2541, 105.8950, 90, RoadType.EXPRESSWAY),
             SpeedCameraNode("TL_MT", "Cao tốc Trung Lương - Mỹ Thuận", 10.4350, 106.3420, 90, RoadType.EXPRESSWAY),
             SpeedCameraNode("HCM_VVK", "Camera tốc độ Đại lộ Võ Văn Kiệt TP.HCM", 10.7503, 106.6634, 60, RoadType.URBAN),
-            SpeedCameraNode("LTDG", "Cao tốc Long Thành - Dầu Giây", 10.8210, 106.9530, 120, RoadType.EXPRESSWAY),
+            SpeedCameraNode("LTDG", "Cao tốc TP.HCM - Long Thành - Dầu Giây", 10.8210, 106.9530, 120, RoadType.EXPRESSWAY),
             SpeedCameraNode("QL20_BL", "Camera tốc độ QL20 Đèo Bảo Lộc", 11.4580, 107.7250, 50, RoadType.NATIONAL_HIGHWAY),
             SpeedCameraNode("LK_DL", "Cao tốc Liên Khương - Prenn Đà Lạt", 11.7520, 108.3810, 90, RoadType.EXPRESSWAY)
         )
@@ -250,7 +245,6 @@ fun GofaOnlineNavigationApp() {
         if (map == null) return
         map.overlays.removeAll { it is Polyline || (it is Marker && it.title?.startsWith("🎥") == true) }
 
-        // Vẽ lộ trình đang chọn
         activeRoute?.let { route ->
             val polyline = Polyline(map).apply {
                 setPoints(route.polylinePoints)
@@ -278,7 +272,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Ghim camera
         if (showCamerasOnMap) {
             for (cam in cameraNodes) {
                 val m = Marker(map).apply {
@@ -293,7 +286,6 @@ fun GofaOnlineNavigationApp() {
         map.invalidate()
     }
 
-    // Lắng nghe GPS
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
@@ -309,7 +301,6 @@ fun GofaOnlineNavigationApp() {
                     mapViewRef?.controller?.animateTo(p)
                 }
 
-                // Cảnh báo camera
                 for (cam in cameraNodes) {
                     val dist = FloatArray(1)
                     Location.distanceBetween(loc.latitude, loc.longitude, cam.lat, cam.lon, dist)
@@ -341,7 +332,6 @@ fun GofaOnlineNavigationApp() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Bản đồ Online OSMDroid
         AndroidView(
             factory = { ctx ->
                 MapView(ctx).apply {
@@ -352,7 +342,6 @@ fun GofaOnlineNavigationApp() {
                     controller.setCenter(userLocation)
                     mapViewRef = this
 
-                    // BẮT SỰ KIỆN ẤN GIỮ TRÊN BẢN ĐỒ 2-3 GIÂY ĐỂ CHỌN ĐỊA ĐIỂM
                     val mReceive = object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean = false
                         override fun longPressHelper(p: GeoPoint?): Boolean {
@@ -371,12 +360,10 @@ fun GofaOnlineNavigationApp() {
             modifier = Modifier.fillMaxSize()
         )
 
-        // Mũi tên điều hướng
         Box(modifier = Modifier.align(Alignment.Center)) {
             NavigationCursor(rotationDegrees = vehicleBearing)
         }
 
-        // Biển báo tốc độ góc trên trái
         val isOver = currentSpeedLimit != null && currentSpeedKmh > currentSpeedLimit!!
         Box(
             modifier = Modifier
@@ -410,7 +397,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Thanh chỉ đường nổi khi đang dẫn đường
         activeRoute?.let { route ->
             Surface(
                 modifier = Modifier
@@ -430,7 +416,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Băng rôn cảnh báo
         activeAlertBanner?.let { alert ->
             Surface(
                 modifier = Modifier
@@ -444,7 +429,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Thanh công cụ bên phải (4 nút)
         Surface(
             modifier = Modifier.padding(top = 42.dp, end = 14.dp).align(Alignment.TopEnd),
             shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
@@ -482,7 +466,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Định vị & zoom góc dưới trái
         Surface(
             modifier = Modifier.padding(start = 14.dp, bottom = 105.dp).align(Alignment.BottomStart),
             shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
@@ -505,7 +488,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // Thanh tìm kiếm dưới cùng
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 22.dp).align(Alignment.BottomCenter),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -538,7 +520,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // DIALOG KHI ẤN GIỮ TRÊN BẢN ĐỒ (2-3 GIÂY)
         if (showMapLongClickDialog && longClickGeoPoint != null) {
             AlertDialog(
                 onDismissRequest = { showMapLongClickDialog = false },
@@ -569,7 +550,6 @@ fun GofaOnlineNavigationApp() {
             )
         }
 
-        // BẢNG TÌM KIẾM ĐIỂM ĐẦU - ĐIỂM CUỐI (KHÔNG PHÂN BIỆT HOA THƯỜNG / DẤU, GỢI Ý ĐẦY ĐỦ)
         if (showSearchSheet) {
             ModalBottomSheet(onDismissRequest = { showSearchSheet = false }, modifier = Modifier.fillMaxHeight(0.92f)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -591,7 +571,6 @@ fun GofaOnlineNavigationApp() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Ô Điểm đầu
                     OutlinedTextField(
                         value = startInputText,
                         onValueChange = {
@@ -615,7 +594,6 @@ fun GofaOnlineNavigationApp() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Ô Điểm cuối
                     OutlinedTextField(
                         value = destInputText,
                         onValueChange = {
@@ -637,7 +615,6 @@ fun GofaOnlineNavigationApp() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Né trạm
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = avoidTolls, onClick = { avoidTolls = !avoidTolls }, label = { Text("Né BOT", fontSize = 12.sp) })
                         FilterChip(selected = avoidHighways, onClick = { avoidHighways = !avoidHighways }, label = { Text("Né cao tốc", fontSize = 12.sp) })
@@ -646,7 +623,6 @@ fun GofaOnlineNavigationApp() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Nút tìm đường & tạo nhiều lựa chọn lộ trình
                     Button(
                         onClick = {
                             if (destInputText.isBlank()) {
@@ -669,14 +645,13 @@ fun GofaOnlineNavigationApp() {
                                 destInputText = destPlace.displayName.substringBefore(",")
                                 val endGeo = GeoPoint(destPlace.lat, destPlace.lon)
 
-                                // Lấy các lựa chọn lộ trình từ OSRM
                                 val options = fetchMultipleRouteOptions(startGeo, endGeo)
                                 isLoadingRoute = false
 
                                 if (options.isNotEmpty()) {
                                     availableRoutes = options
                                     showSearchSheet = false
-                                    showRouteOptionsSheet = true // Hiển thị bảng chọn lộ trình
+                                    showRouteOptionsSheet = true
                                 } else {
                                     Toast.makeText(context, "Không thể tính lộ trình. Kiểm tra kết nối mạng!", Toast.LENGTH_LONG).show()
                                 }
@@ -729,9 +704,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // =========================================================================
-        // BẢNG HIỂN THỊ LỘ TRÌNH GỢI Ý ĐỂ LỰA CHỌN
-        // =========================================================================
         if (showRouteOptionsSheet) {
             ModalBottomSheet(onDismissRequest = { showRouteOptionsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
@@ -773,9 +745,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // =========================================================================
-        // BẢNG CHI TIẾT TỪNG BƯỚC RẼ & HUỶ LỘ TRÌNH
-        // =========================================================================
         if (showStepsSheet) {
             ModalBottomSheet(onDismissRequest = { showStepsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
@@ -826,7 +795,6 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
-        // BẢNG CÀI ĐẶT
         if (showSettingsSheet) {
             ModalBottomSheet(onDismissRequest = { showSettingsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
@@ -866,7 +834,6 @@ fun SettingSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean)
     }
 }
 
-// HÀM LỌC TÌM KIẾM KHÔNG PHÂN BIỆT HOA THƯỜNG / DẤU
 fun filterPlacesIgnoreCase(rawQuery: String): List<PlaceSearchResult> {
     val q = rawQuery.trim().lowercase(Locale.ROOT)
     if (q.isEmpty()) return PREBUILT_PLACES
@@ -881,14 +848,13 @@ fun removeDiacritics(str: String): String {
     return pattern.matcher(normalized).replaceAll("").lowercase(Locale.ROOT)
 }
 
-// HÀM GỌI MÁY CHỦ OSRM TẠO NHIỀU LỰA CHỌN LỘ TRÌNH CHO Ô TÔ
 suspend fun fetchMultipleRouteOptions(start: GeoPoint, end: GeoPoint): List<RouteOption> = withContext(Dispatchers.IO) {
     val options = mutableListOf<RouteOption>()
     try {
         val urlStr = "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson&steps=true&alternatives=true"
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "GofaOtoVietnamNavigation/3.0")
+            setRequestProperty("User-Agent", "GofaOtoVietnamNavigation/3.1")
             connectTimeout = 10000
             readTimeout = 10000
         }
@@ -936,11 +902,10 @@ suspend fun fetchMultipleRouteOptions(start: GeoPoint, end: GeoPoint): List<Rout
         }
     } catch (_: Exception) {}
 
-    // Nếu mạng lỗi, trả về 1 lộ trình giả lập an toàn trực tiếp
     if (options.isEmpty()) {
         val fallbackPoints = listOf(start, GeoPoint((start.latitude + end.latitude)/2, (start.longitude + end.longitude)/2), end)
         val fallbackSteps = listOf(RouteStepItem("Bắt đầu di chuyển thẳng theo tuyến đường chính", 500, "Đường quốc lộ", start))
-        options.add(RouteOption("Lộ trình an toàn Offline", fallbackPoints, fallbackSteps, 12.5, 25))
+        options.add(RouteOption("Lộ trình an toàn", fallbackPoints, fallbackSteps, 12.5, 25))
     }
     return@withContext options
 }
