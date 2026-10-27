@@ -70,10 +70,11 @@ import kotlin.math.roundToInt
 
 val GofaGreen = Color(0xFF0E8A5F)
 val GofaRed = Color(0xFFE5434B)
+val RoutePink = Color(0xFFD81B60) // Màu hồng sẫm cho đường hành trình
 
 enum class RoadType(val label: String, val alertDistanceMeters: Int) {
-    URBAN("Đô thị", 300),
-    NATIONAL_HIGHWAY("Quốc lộ", 400),
+    URBAN("Đô thị", 500),
+    NATIONAL_HIGHWAY("Quốc lộ", 500),
     EXPRESSWAY("Cao tốc", 500)
 }
 
@@ -95,7 +96,8 @@ data class RouteOption(
     val polylinePoints: List<GeoPoint>,
     val steps: List<RouteStepItem>,
     val totalDistanceKm: Double,
-    val totalDurationMin: Int
+    val totalDurationMin: Int,
+    val tollFeesVnd: Int // Tiền trạm thu phí
 )
 
 data class SpeedCameraNode(
@@ -107,22 +109,30 @@ data class SpeedCameraNode(
     val roadType: RoadType
 )
 
+data class TollGateNode(
+    val name: String,
+    val lat: Double,
+    val lon: Double,
+    val feeVnd: Int
+)
+
 val PREBUILT_PLACES = listOf(
     PlaceSearchResult("TP. Đà Lạt, Lâm Đồng", 11.9404, 108.4583),
     PlaceSearchResult("Chợ Đà Lạt, Nguyễn Thị Minh Khai, Phường 1, Đà Lạt", 11.9413, 108.4357),
     PlaceSearchResult("Hồ Xuân Hương, Đà Lạt, Lâm Đồng", 11.9430, 108.4380),
     PlaceSearchResult("Đèo Bảo Lộc, Quốc lộ 20, Lâm Đồng", 11.4580, 107.7250),
-    PlaceSearchResult("TP. Hồ Chí Minh (Trung tâm Quận 1)", 10.7769, 106.7009),
+    PlaceSearchResult("TP. Hồ Chí Minh (Quận 1)", 10.7769, 106.7009),
     PlaceSearchResult("Bến xe Miền Tây, Bình Tân, TP.HCM", 10.7324, 106.6190),
     PlaceSearchResult("Cao tốc TP.HCM - Long Thành - Dầu Giây", 10.8210, 106.9530),
     PlaceSearchResult("Nút giao IC3, Cần Thơ", 10.0152, 105.7881),
     PlaceSearchResult("TP. Cần Thơ (Bến Ninh Kiều)", 10.0341, 105.7839),
     PlaceSearchResult("Cao tốc Mỹ Thuận - Cần Thơ", 10.2541, 105.8950),
+    PlaceSearchResult("Trạm thu phí Trung Lương, Tiền Giang", 10.4200, 106.3500),
+    PlaceSearchResult("Trạm thu phí Bến Lức, Long An", 10.6200, 106.4800),
     PlaceSearchResult("TP. Sóc Trăng, Sóc Trăng", 9.6025, 105.9739),
-    PlaceSearchResult("TP. Bạc Liêu", 9.2941, 105.7278),
+    PlaceSearchResult("TP. Bạc Liêu, Bạc Liêu", 9.2941, 105.7278),
     PlaceSearchResult("Cột mốc Mũi Cà Mau, Đất Mũi, Cà Mau", 8.6231, 104.7925),
-    PlaceSearchResult("TP. Cà Mau, Cà Mau", 9.1768, 105.1524),
-    PlaceSearchResult("Trạm dừng chân Mekong Rest Stop (Tiền Giang)", 10.3842, 106.3120)
+    PlaceSearchResult("TP. Cà Mau, Cà Mau", 9.1768, 105.1524)
 )
 
 fun createOnlineMapTileSource(name: String, lyrsCode: String): OnlineTileSourceBase {
@@ -148,7 +158,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val osmConfig = Configuration.getInstance()
-        osmConfig.userAgentValue = "GofaOtoVietnamNavigation/3.1"
+        osmConfig.userAgentValue = "GofaOtoVietnamNavigation/4.0"
         val baseDir = File(cacheDir, "osmdroid")
         val tileDir = File(baseDir, "tiles")
         baseDir.mkdirs()
@@ -173,17 +183,18 @@ fun GofaOnlineNavigationApp() {
     var userLocation by remember { mutableStateOf(GeoPoint(9.2941, 105.7278)) }
     var hasGpsFix by remember { mutableStateOf(false) }
     var vehicleBearing by remember { mutableFloatStateOf(0f) }
-    var followUserGps by remember { mutableStateOf(true) }
+    var followUserGps by remember { mutableStateOf(true) } // Bật/Tắt khóa tâm vị trí
 
     var currentSpeedKmh by remember { mutableIntStateOf(0) }
     var currentSpeedLimit by remember { mutableStateOf<Int?>(50) }
-    var currentRoadName by remember { mutableStateOf("Đang cập nhật đường...") }
     var activeAlertBanner by remember { mutableStateOf<String?>(null) }
+    var upcomingTollInfo by remember { mutableStateOf<String?>(null) }
 
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var mapLayerMode by remember { mutableIntStateOf(0) }
     var isVoiceEnabled by remember { mutableStateOf(true) }
     var showCamerasOnMap by remember { mutableStateOf(true) }
+    var isDarkMode by remember { mutableStateOf(false) } // Chế độ ban đêm
 
     var showSearchSheet by remember { mutableStateOf(false) }
     var showRouteOptionsSheet by remember { mutableStateOf(false) }
@@ -212,17 +223,27 @@ fun GofaOnlineNavigationApp() {
     val cameraNodes = remember {
         mutableStateListOf(
             SpeedCameraNode("BL_QL1", "Camera phạt nguội QL1A Bạc Liêu", 9.2985, 105.7240, 50, RoadType.URBAN),
-            SpeedCameraNode("CM_QL1", "Camera phạt nguội cửa ngõ Cà Mau", 9.1768, 105.1524, 50, RoadType.URBAN),
-            SpeedCameraNode("ST_QL1", "Trạm bắn tốc độ QL1A Sóc Trăng", 9.6025, 105.9739, 60, RoadType.NATIONAL_HIGHWAY),
-            SpeedCameraNode("CT_IC3", "Camera phạt nguội nút giao IC3 Cần Thơ", 10.0152, 105.7881, 60, RoadType.NATIONAL_HIGHWAY),
+            SpeedCameraNode("CM_QL1", "Camera phạt nguội Cà Mau", 9.1768, 105.1524, 50, RoadType.URBAN),
+            SpeedCameraNode("ST_QL1", "Trạm bắn tốc độ Sóc Trăng", 9.6025, 105.9739, 60, RoadType.NATIONAL_HIGHWAY),
+            SpeedCameraNode("CT_IC3", "Camera nút giao IC3 Cần Thơ", 10.0152, 105.7881, 60, RoadType.NATIONAL_HIGHWAY),
             SpeedCameraNode("MT_CT", "Cao tốc Mỹ Thuận - Cần Thơ", 10.2541, 105.8950, 90, RoadType.EXPRESSWAY),
             SpeedCameraNode("TL_MT", "Cao tốc Trung Lương - Mỹ Thuận", 10.4350, 106.3420, 90, RoadType.EXPRESSWAY),
-            SpeedCameraNode("HCM_VVK", "Camera tốc độ Đại lộ Võ Văn Kiệt TP.HCM", 10.7503, 106.6634, 60, RoadType.URBAN),
-            SpeedCameraNode("LTDG", "Cao tốc TP.HCM - Long Thành - Dầu Giây", 10.8210, 106.9530, 120, RoadType.EXPRESSWAY),
-            SpeedCameraNode("QL20_BL", "Camera tốc độ QL20 Đèo Bảo Lộc", 11.4580, 107.7250, 50, RoadType.NATIONAL_HIGHWAY),
-            SpeedCameraNode("LK_DL", "Cao tốc Liên Khương - Prenn Đà Lạt", 11.7520, 108.3810, 90, RoadType.EXPRESSWAY)
+            SpeedCameraNode("HCM_VVK", "Đại lộ Võ Văn Kiệt TP.HCM", 10.7503, 106.6634, 60, RoadType.URBAN),
+            SpeedCameraNode("LTDG", "Cao tốc Long Thành - Dầu Giây", 10.8210, 106.9530, 120, RoadType.EXPRESSWAY),
+            SpeedCameraNode("QL20_BL", "QL20 Đèo Bảo Lộc", 11.4580, 107.7250, 50, RoadType.NATIONAL_HIGHWAY),
+            SpeedCameraNode("LK_DL", "Cao tốc Liên Khương Đà Lạt", 11.7520, 108.3810, 90, RoadType.EXPRESSWAY)
         )
     }
+
+    val tollGates = remember {
+        listOf(
+            TollGateNode("Trạm thu phí Trung Lương", 10.4200, 106.3500, 35000),
+            TollGateNode("Trạm thu phí Bến Lức", 10.6200, 106.4800, 25000),
+            TollGateNode("Trạm thu phí Long Thành", 10.8100, 106.9100, 35000),
+            TollGateNode("Trạm thu phí Định Quán", 11.2000, 107.3500, 35000)
+        )
+    }
+
     val spokenAlertIds = remember { mutableStateListOf<String>() }
 
     val tts = remember {
@@ -241,20 +262,32 @@ fun GofaOnlineNavigationApp() {
         }
     }
 
+    // Vẽ bản đồ với đường hành trình HỒNG SẪM VIỀN TRẮNG
     fun refreshMap(map: MapView?) {
         if (map == null) return
         map.overlays.removeAll { it is Polyline || (it is Marker && it.title?.startsWith("🎥") == true) }
 
         activeRoute?.let { route ->
-            val polyline = Polyline(map).apply {
+            // Viền trắng bên dưới
+            val whiteBorder = Polyline(map).apply {
                 setPoints(route.polylinePoints)
-                outlinePaint.color = AndroidColor.parseColor("#0E8A5F")
-                outlinePaint.strokeWidth = 22f
+                outlinePaint.color = AndroidColor.WHITE
+                outlinePaint.strokeWidth = 30f
                 outlinePaint.strokeCap = Paint.Cap.ROUND
                 outlinePaint.strokeJoin = Paint.Join.ROUND
                 outlinePaint.isAntiAlias = true
             }
-            map.overlays.add(polyline)
+            // Đường chính màu hồng sẫm ở trên
+            val pinkLine = Polyline(map).apply {
+                setPoints(route.polylinePoints)
+                outlinePaint.color = AndroidColor.parseColor("#D81B60")
+                outlinePaint.strokeWidth = 20f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                outlinePaint.isAntiAlias = true
+            }
+            map.overlays.add(whiteBorder)
+            map.overlays.add(pinkLine)
 
             if (route.polylinePoints.isNotEmpty()) {
                 val startM = Marker(map).apply {
@@ -277,7 +310,7 @@ fun GofaOnlineNavigationApp() {
                 val m = Marker(map).apply {
                     position = GeoPoint(cam.lat, cam.lon)
                     title = "🎥 ${cam.name}"
-                    snippet = "Giới hạn: ${cam.maxSpeed} km/h"
+                    snippet = "Giới hạn: ${cam.maxSpeed} km/h | Báo trước 500m"
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 }
                 map.overlays.add(m)
@@ -286,6 +319,7 @@ fun GofaOnlineNavigationApp() {
         map.invalidate()
     }
 
+    // GPS & Cảnh báo trước 500m
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
@@ -301,13 +335,26 @@ fun GofaOnlineNavigationApp() {
                     mapViewRef?.controller?.animateTo(p)
                 }
 
+                // Kiểm tra trạm thu phí sắp tới (trong vòng 500m)
+                for (toll in tollGates) {
+                    val distToll = FloatArray(1)
+                    Location.distanceBetween(loc.latitude, loc.longitude, toll.lat, toll.lon, distToll)
+                    if (distToll[0] <= 500f) {
+                        upcomingTollInfo = "🏷️ Sắp tới ${toll.name} • Cước: ${toll.feeVnd} VNĐ"
+                        break
+                    } else {
+                        upcomingTollInfo = null
+                    }
+                }
+
+                // Kiểm tra camera / biển báo trong vòng 500m
                 for (cam in cameraNodes) {
                     val dist = FloatArray(1)
                     Location.distanceBetween(loc.latitude, loc.longitude, cam.lat, cam.lon, dist)
                     val dMeters = dist[0].roundToInt()
-                    if (dMeters <= cam.roadType.alertDistanceMeters) {
+                    if (dMeters <= 500) {
                         currentSpeedLimit = cam.maxSpeed
-                        activeAlertBanner = "⚠️ Cách ${dMeters}m (${cam.roadType.label}): ${cam.name} [${cam.maxSpeed} km/h]"
+                        activeAlertBanner = "⚠️ Nhắc trước ${dMeters}m (${cam.roadType.label}): ${cam.name} [Giới hạn ${cam.maxSpeed} km/h]"
                         if (!spokenAlertIds.contains(cam.id)) {
                             spokenAlertIds.add(cam.id)
                             speak("Chú ý! Phía trước $dMeters mét có ${cam.name}, giới hạn tốc độ ${cam.maxSpeed} ki lô mét trên giờ.")
@@ -315,8 +362,9 @@ fun GofaOnlineNavigationApp() {
                         break
                     }
                 }
+
                 if (currentSpeedLimit != null && currentSpeedKmh > currentSpeedLimit!! && currentSpeedKmh > 15) {
-                    activeAlertBanner = "🚨 BẠN ĐANG VƯỢT TỐC ĐỘ GIỚI HẠN ($currentSpeedKmh / $currentSpeedLimit km/h)!"
+                    activeAlertBanner = "🚨 VƯỢT TỐC ĐỘ GIỚI HẠN ($currentSpeedKmh / $currentSpeedLimit km/h)!"
                 }
             }
             try {
@@ -331,11 +379,11 @@ fun GofaOnlineNavigationApp() {
         permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(if (isDarkMode) Color(0xFF121212) else Color.White)) {
         AndroidView(
             factory = { ctx ->
                 MapView(ctx).apply {
-                    setTileSource(createOnlineMapTileSource("GoogleStandardVN", "m"))
+                    setTileSource(createOnlineMapTileSource("GoogleVN", "m"))
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                     controller.setZoom(16.0)
@@ -347,7 +395,7 @@ fun GofaOnlineNavigationApp() {
                         override fun longPressHelper(p: GeoPoint?): Boolean {
                             if (p != null) {
                                 longClickGeoPoint = p
-                                longClickAddressName = "Tọa độ [${String.format("%.4f", p.latitude)}, ${String.format("%.4f", p.longitude)}]"
+                                longClickAddressName = "Điểm chọn [${String.format("%.4f", p.latitude)}, ${String.format("%.4f", p.longitude)}]"
                                 showMapLongClickDialog = true
                             }
                             return true
@@ -364,82 +412,69 @@ fun GofaOnlineNavigationApp() {
             NavigationCursor(rotationDegrees = vehicleBearing)
         }
 
+        // Biển báo tốc độ góc trên trái
         val isOver = currentSpeedLimit != null && currentSpeedKmh > currentSpeedLimit!!
         Box(
-            modifier = Modifier
-                .padding(top = 42.dp, start = 14.dp)
-                .size(width = 115.dp, height = 105.dp)
-                .align(Alignment.TopStart)
+            modifier = Modifier.padding(top = 42.dp, start = 14.dp).size(width = 115.dp, height = 105.dp).align(Alignment.TopStart)
         ) {
             Box(
-                modifier = Modifier
-                    .size(78.dp)
-                    .shadow(6.dp, CircleShape)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .border(8.dp, GofaRed, CircleShape)
-                    .clickable { speak("Giới hạn tốc độ ${currentSpeedLimit ?: "--"} ki lô mét trên giờ.") },
+                modifier = Modifier.size(78.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(Color.White).border(8.dp, GofaRed, CircleShape)
+                    .clickable { speak("Tốc độ giới hạn ${currentSpeedLimit ?: "--"} ki lô mét trên giờ.") },
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = currentSpeedLimit?.toString() ?: "--", color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
             }
             Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .align(Alignment.BottomEnd)
-                    .shadow(6.dp, CircleShape)
-                    .clip(CircleShape)
-                    .background(if (isOver) GofaRed else Color.White)
-                    .border(5.dp, if (isOver) Color.Yellow else GofaGreen, CircleShape),
+                modifier = Modifier.size(54.dp).align(Alignment.BottomEnd).shadow(6.dp, CircleShape).clip(CircleShape).background(if (isOver) GofaRed else Color.White).border(5.dp, if (isOver) Color.Yellow else GofaGreen, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = currentSpeedKmh.toString(), color = if (isOver) Color.White else GofaGreen, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
         }
 
+        // Thanh chỉ đường nổi khi đang chạy
         activeRoute?.let { route ->
             Surface(
-                modifier = Modifier
-                    .padding(top = 42.dp, start = 136.dp, end = 78.dp)
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .clickable { showStepsSheet = true },
-                shape = RoundedCornerShape(16.dp),
-                color = GofaGreen,
-                shadowElevation = 6.dp
+                modifier = Modifier.padding(top = 42.dp, start = 136.dp, end = 78.dp).fillMaxWidth().align(Alignment.TopCenter).clickable { showStepsSheet = true },
+                shape = RoundedCornerShape(16.dp), color = GofaGreen, shadowElevation = 6.dp
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                    Text(text = nextStepInstruction ?: "Đi theo đường màu xanh", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(text = nextStepInstruction ?: "Đi theo vạch hồng sẫm", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "🚗 ${route.totalDistanceKm} km  •  ⏱ ${route.totalDurationMin} phút (Chạm xem chi tiết bước rẽ)", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
+                    Text(text = "🚗 ${route.totalDistanceKm} km  •  ⏱ ${route.totalDurationMin} phút  •  💰 Phí BOT: ${route.tollFeesVnd} đ", color = Color.White.copy(alpha = 0.95f), fontSize = 11.sp)
                 }
             }
         }
 
-        activeAlertBanner?.let { alert ->
-            Surface(
-                modifier = Modifier
-                    .padding(top = 152.dp, start = 14.dp, end = 78.dp)
-                    .align(Alignment.TopStart),
-                shape = RoundedCornerShape(12.dp),
-                color = GofaRed,
-                shadowElevation = 6.dp
-            ) {
-                Text(text = alert, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+        // Băng rôn cảnh báo trước 500m / Trạm thu phí
+        Column(
+            modifier = Modifier.padding(top = 152.dp, start = 14.dp, end = 78.dp).align(Alignment.TopStart),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            activeAlertBanner?.let { alert ->
+                Surface(shape = RoundedCornerShape(10.dp), color = GofaRed, shadowElevation = 6.dp) {
+                    Text(text = alert, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                }
+            }
+            upcomingTollInfo?.let { toll ->
+                Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFF1565C0), shadowElevation = 6.dp) {
+                    Text(text = toll, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                }
             }
         }
 
+        // Thanh công cụ bên phải (4 nút)
         Surface(
             modifier = Modifier.padding(top = 42.dp, end = 14.dp).align(Alignment.TopEnd),
-            shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
+            shape = RoundedCornerShape(28.dp), color = if (isDarkMode) Color(0xFF2C2C2C).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
         ) {
             Column(modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 IconButton(onClick = {
                     mapLayerMode = (mapLayerMode + 1) % 3
                     val (src, lyrs, lbl) = when(mapLayerMode) {
-                        1 -> Triple("GoogleTraffic", "m,traffic", "Bản đồ Giao thông trực tuyến")
-                        2 -> Triple("GoogleSat", "y", "Bản đồ Vệ tinh")
-                        else -> Triple("GoogleStandard", "m", "Bản đồ Tiêu chuẩn")
+                        1 -> Triple("Traffic", "m,traffic", "Bản đồ Giao thông")
+                        2 -> Triple("Sat", "y", "Bản đồ Vệ tinh")
+                        else -> Triple("Standard", "m", "Bản đồ Tiêu chuẩn")
                     }
                     mapViewRef?.setTileSource(createOnlineMapTileSource(src, lyrs))
                     mapViewRef?.invalidate()
@@ -449,7 +484,7 @@ fun GofaOnlineNavigationApp() {
                 }
                 IconButton(onClick = {
                     isVoiceEnabled = !isVoiceEnabled
-                    Toast.makeText(context, if (isVoiceEnabled) "Đã bật giọng nói" else "Đã tắt giọng nói", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (isVoiceEnabled) "Đã bật giọng nói nhắc trước 500m" else "Đã tắt giọng nói", Toast.LENGTH_SHORT).show()
                 }) {
                     Icon(if (isVoiceEnabled) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff, contentDescription = null, tint = if (isVoiceEnabled) GofaGreen else Color.Gray, modifier = Modifier.size(28.dp))
                 }
@@ -459,23 +494,28 @@ fun GofaOnlineNavigationApp() {
                 IconButton(onClick = {
                     showCamerasOnMap = !showCamerasOnMap
                     refreshMap(mapViewRef)
-                    Toast.makeText(context, if (showCamerasOnMap) "Đã bật hiển thị Camera phạt nguội" else "Đã ẩn Camera", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (showCamerasOnMap) "Đã hiển thị Camera trên bản đồ" else "Đã ẩn Camera", Toast.LENGTH_SHORT).show()
                 }) {
                     Icon(Icons.Outlined.PhotoCamera, contentDescription = null, tint = if (showCamerasOnMap) GofaGreen else Color.Gray, modifier = Modifier.size(28.dp))
                 }
             }
         }
 
+        // Cụm nút góc dưới trái (Bật/Tắt khóa tâm vị trí chính xác)
         Surface(
             modifier = Modifier.padding(start = 14.dp, bottom = 105.dp).align(Alignment.BottomStart),
-            shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
+            shape = RoundedCornerShape(28.dp), color = if (isDarkMode) Color(0xFF2C2C2C).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp
         ) {
             Column(modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(onClick = {
-                    followUserGps = true
-                    mapViewRef?.controller?.animateTo(userLocation)
-                    mapViewRef?.controller?.setZoom(17.0)
-                    Toast.makeText(context, "📍 Đã đưa tâm về vị trí GPS của bạn", Toast.LENGTH_SHORT).show()
+                    followUserGps = !followUserGps // Bật / Tắt khóa tâm vị trí
+                    if (followUserGps) {
+                        mapViewRef?.controller?.animateTo(userLocation)
+                        mapViewRef?.controller?.setZoom(17.0)
+                        Toast.makeText(context, "🔒 Đã khóa tâm về vị trí của bạn", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "🔓 Đã mở khóa tâm (Tự do kéo bản đồ)", Toast.LENGTH_SHORT).show()
+                    }
                 }) {
                     Icon(Icons.Outlined.MyLocation, contentDescription = null, tint = if (followUserGps) GofaGreen else Color.Gray, modifier = Modifier.size(26.dp))
                 }
@@ -488,13 +528,14 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
+        // Thanh tìm kiếm dưới cùng
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 22.dp).align(Alignment.BottomCenter),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Surface(
                 modifier = Modifier.weight(1f).height(58.dp).clickable { showSearchSheet = true },
-                shape = RoundedCornerShape(30.dp), color = Color.White.copy(alpha = 0.97f), shadowElevation = 5.dp
+                shape = RoundedCornerShape(30.dp), color = if (isDarkMode) Color(0xFF2C2C2C).copy(alpha = 0.97f) else Color.White.copy(alpha = 0.97f), shadowElevation = 5.dp
             ) {
                 Row(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(GofaGreen), contentAlignment = Alignment.Center) {
@@ -502,7 +543,7 @@ fun GofaOnlineNavigationApp() {
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = if (destInputText.isEmpty()) "Tìm kiếm địa điểm, quán xá, tỉnh thành..." else "Đến: $destInputText", color = Color.DarkGray, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(text = if (destInputText.isEmpty()) "Tìm số nhà, tên đường, khóm, xã, tỉnh..." else "Đến: $destInputText", color = if (isDarkMode) Color.White else Color.DarkGray, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (activeRoute != null) {
                             Text(text = "Đang dẫn đường • ${activeRoute!!.totalDistanceKm} km (${activeRoute!!.totalDurationMin} phút)", color = GofaGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
@@ -512,7 +553,7 @@ fun GofaOnlineNavigationApp() {
 
             Surface(
                 modifier = Modifier.size(58.dp).clickable { showSettingsSheet = true },
-                shape = CircleShape, color = Color.White.copy(alpha = 0.97f), shadowElevation = 5.dp
+                shape = CircleShape, color = if (isDarkMode) Color(0xFF2C2C2C).copy(alpha = 0.97f) else Color.White.copy(alpha = 0.97f), shadowElevation = 5.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(Icons.Outlined.Settings, contentDescription = null, tint = GofaGreen, modifier = Modifier.size(30.dp))
@@ -520,10 +561,11 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
+        // Dialog khi ấn giữ trên bản đồ 2-3 giây
         if (showMapLongClickDialog && longClickGeoPoint != null) {
             AlertDialog(
                 onDismissRequest = { showMapLongClickDialog = false },
-                title = { Text("📍 Điểm đã chọn trên bản đồ", fontWeight = FontWeight.Bold, color = GofaGreen) },
+                title = { Text("📍 Vị trí đã chọn trên bản đồ", fontWeight = FontWeight.Bold, color = GofaGreen) },
                 text = { Text(longClickAddressName) },
                 confirmButton = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -534,7 +576,7 @@ fun GofaOnlineNavigationApp() {
                             showSearchSheet = true
                             Toast.makeText(context, "Đã chọn làm Điểm đến!", Toast.LENGTH_SHORT).show()
                         }, colors = ButtonDefaults.buttonColors(containerColor = GofaGreen)) {
-                            Text("Đặt làm Điểm đến (Đến đây)")
+                            Text("Đặt làm Điểm đến")
                         }
                         OutlinedButton(onClick = {
                             selectedStartPoint = PlaceSearchResult(longClickAddressName, longClickGeoPoint!!.latitude, longClickGeoPoint!!.longitude)
@@ -543,18 +585,19 @@ fun GofaOnlineNavigationApp() {
                             showSearchSheet = true
                             Toast.makeText(context, "Đã chọn làm Điểm xuất phát!", Toast.LENGTH_SHORT).show()
                         }) {
-                            Text("Đặt làm Điểm xuất phát (Từ đây)")
+                            Text("Đặt làm Điểm xuất phát")
                         }
                     }
                 }
             )
         }
 
+        // Bảng tìm kiếm toàn quốc chi tiết
         if (showSearchSheet) {
             ModalBottomSheet(onDismissRequest = { showSearchSheet = false }, modifier = Modifier.fillMaxHeight(0.92f)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Lập lộ trình dẫn đường Ô tô", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
+                        Text("Tìm kiếm & Lập lộ trình toàn quốc", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
                         TextButton(onClick = {
                             val tTxt = startInputText
                             val tPt = selectedStartPoint
@@ -599,9 +642,11 @@ fun GofaOnlineNavigationApp() {
                         onValueChange = {
                             destInputText = it
                             isSelectingStartField = false
-                            searchSuggestions = filterPlacesIgnoreCase(it)
+                            scope.launch {
+                                searchSuggestions = searchOnlineVietnamAddresses(it)
+                            }
                         },
-                        label = { Text("🔴 Điểm đến (VD: da lat, cho da lat, can tho...)") },
+                        label = { Text("🔴 Điểm đến (Số nhà, tên đường, khóm, xã, tỉnh...)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         trailingIcon = {
@@ -632,13 +677,13 @@ fun GofaOnlineNavigationApp() {
                             isLoadingRoute = true
                             scope.launch {
                                 val startGeo = selectedStartPoint?.let { GeoPoint(it.lat, it.lon) }
-                                    ?: (if (startInputText != "Vị trí GPS hiện tại của tôi") filterPlacesIgnoreCase(startInputText).firstOrNull()?.let { GeoPoint(it.lat, it.lon) } else null)
+                                    ?: (if (startInputText != "Vị trí GPS hiện tại của tôi") searchOnlineVietnamAddresses(startInputText).firstOrNull()?.let { GeoPoint(it.lat, it.lon) } else null)
                                     ?: userLocation
 
-                                val destPlace = selectedDestPoint ?: filterPlacesIgnoreCase(destInputText).firstOrNull()
+                                val destPlace = selectedDestPoint ?: searchOnlineVietnamAddresses(destInputText).firstOrNull()
                                 if (destPlace == null) {
                                     isLoadingRoute = false
-                                    Toast.makeText(context, "Không tìm thấy địa điểm '$destInputText'. Hãy chọn từ danh sách gợi ý bên dưới!", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Không tìm thấy địa điểm '$destInputText'!", Toast.LENGTH_LONG).show()
                                     return@launch
                                 }
                                 selectedDestPoint = destPlace
@@ -653,7 +698,7 @@ fun GofaOnlineNavigationApp() {
                                     showSearchSheet = false
                                     showRouteOptionsSheet = true
                                 } else {
-                                    Toast.makeText(context, "Không thể tính lộ trình. Kiểm tra kết nối mạng!", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Không thể tính lộ trình!", Toast.LENGTH_LONG).show()
                                 }
                             }
                         },
@@ -673,7 +718,7 @@ fun GofaOnlineNavigationApp() {
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = "📍 Danh sách gợi ý địa điểm (Không phân biệt hoa thường):", fontSize = 13.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    Text(text = "📍 Danh sách kết quả & Gợi ý toàn quốc:", fontSize = 13.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
 
                     LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -683,7 +728,7 @@ fun GofaOnlineNavigationApp() {
                                     if (isSelectingStartField) {
                                         selectedStartPoint = place
                                         startInputText = place.displayName
-                                        Toast.makeText(context, "Đã chọn Điểm đầu!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Đã chọn Điểm xuất phát!", Toast.LENGTH_SHORT).show()
                                     } else {
                                         selectedDestPoint = place
                                         destInputText = place.displayName
@@ -704,12 +749,13 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
+        // Bảng chọn lộ trình
         if (showRouteOptionsSheet) {
             ModalBottomSheet(onDismissRequest = { showRouteOptionsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
-                    Text("Lựa chọn lộ trình lái xe", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
+                    Text("Lựa chọn lộ trình lái xe Ô tô", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Hệ thống đã tìm thấy ${availableRoutes.size} phương án tuyến đường tối ưu:", fontSize = 13.sp, color = Color.Gray)
+                    Text("Hệ thống đã tìm thấy ${availableRoutes.size} phương án tuyến đường ưu tiên:", fontSize = 13.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(10.dp))
 
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -721,7 +767,7 @@ fun GofaOnlineNavigationApp() {
                                     refreshMap(mapViewRef)
                                     showRouteOptionsSheet = false
                                     followUserGps = false
-                                    speak("Đã chọn lộ trình ${opt.title}. Quãng đường ${opt.totalDistanceKm} ki lô mét, thời gian ${opt.totalDurationMin} phút.")
+                                    speak("Đã chọn lộ trình ${opt.title}. Quãng đường ${opt.totalDistanceKm} ki lô mét, thời gian ${opt.totalDurationMin} phút, phí trạm thu phí ${opt.tollFeesVnd} đồng.")
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFFEAF5F0),
@@ -733,9 +779,9 @@ fun GofaOnlineNavigationApp() {
                                         Text(text = "⏱ ${opt.totalDurationMin} phút", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Text(text = "Quãng đường: ${opt.totalDistanceKm} km", fontSize = 14.sp, color = Color.DarkGray)
+                                    Text(text = "Quãng đường: ${opt.totalDistanceKm} km  •  Phí BOT: ${opt.tollFeesVnd} đ", fontSize = 14.sp, color = Color.DarkGray)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(text = "Đường chính: ${opt.steps.firstOrNull()?.roadName?.ifEmpty { "Đường ô tô chính" } ?: "Đường chính"}", fontSize = 12.sp, color = Color.Gray)
+                                    Text(text = "Tuyến chính: ${opt.steps.firstOrNull()?.roadName?.ifEmpty { "Đường ô tô" } ?: "Đường ô tô"}", fontSize = 12.sp, color = Color.Gray)
                                 }
                             }
                         }
@@ -745,11 +791,12 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
+        // Bảng chi tiết bước rẽ
         if (showStepsSheet) {
             ModalBottomSheet(onDismissRequest = { showStepsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Chi tiết các bước rẽ", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
+                        Text("Chi tiết các bước rẽ (Nhắc trước 500m)", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
                         if (activeRoute != null) {
                             TextButton(onClick = {
                                 activeRoute = null
@@ -795,13 +842,15 @@ fun GofaOnlineNavigationApp() {
             }
         }
 
+        // Bảng cài đặt
         if (showSettingsSheet) {
             ModalBottomSheet(onDismissRequest = { showSettingsSheet = false }) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                     Text("Cài đặt Lái xe Ô tô", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GofaGreen)
                     Spacer(modifier = Modifier.height(8.dp))
+                    SettingSwitchRow("Chế độ Ban đêm (Dark Mode)", isDarkMode) { isDarkMode = it }
                     SettingSwitchRow("Hiển thị Camera phạt nguội", showCamerasOnMap) { showCamerasOnMap = it; refreshMap(mapViewRef) }
-                    SettingSwitchRow("Bật giọng nói tiếng Việt", isVoiceEnabled) { isVoiceEnabled = it }
+                    SettingSwitchRow("Bật giọng nói tiếng Việt (Nhắc 500m)", isVoiceEnabled) { isVoiceEnabled = it }
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
@@ -848,13 +897,47 @@ fun removeDiacritics(str: String): String {
     return pattern.matcher(normalized).replaceAll("").lowercase(Locale.ROOT)
 }
 
+// Tìm kiếm trực tuyến chi tiết toàn quốc (số nhà, đường, khóm, xã, tỉnh)
+suspend fun searchOnlineVietnamAddresses(query: String): List<PlaceSearchResult> = withContext(Dispatchers.IO) {
+    val list = mutableListOf<PlaceSearchResult>()
+    try {
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val url = URL("https://nominatim.openstreetmap.org/search?format=json&q=$encoded&countrycodes=vn&accept-language=vi&limit=12")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "GofaOtoVietnamNavigation/4.0")
+            connectTimeout = 8000
+            readTimeout = 8000
+        }
+        if (conn.responseCode == 200) {
+            val text = conn.inputStream.bufferedReader().readText()
+            val arr = JSONArray(text)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    PlaceSearchResult(
+                        displayName = obj.optString("display_name"),
+                        lat = obj.optDouble("lat"),
+                        lon = obj.optDouble("lon")
+                    )
+                )
+            }
+        }
+    } catch (_: Exception) {}
+    if (list.isEmpty()) {
+        return@withContext filterPlacesIgnoreCase(query)
+    }
+    return@withContext list
+}
+
+// Thuật toán trả về nhiều lộ trình ưu tiên kèm tính toán phí BOT
 suspend fun fetchMultipleRouteOptions(start: GeoPoint, end: GeoPoint): List<RouteOption> = withContext(Dispatchers.IO) {
     val options = mutableListOf<RouteOption>()
     try {
         val urlStr = "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson&steps=true&alternatives=true"
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "GofaOtoVietnamNavigation/3.1")
+            setRequestProperty("User-Agent", "GofaOtoVietnamNavigation/4.0")
             connectTimeout = 10000
             readTimeout = 10000
         }
@@ -892,20 +975,21 @@ suspend fun fetchMultipleRouteOptions(start: GeoPoint, end: GeoPoint): List<Rout
                     }
                 }
 
+                val tollFee = if (distKm > 80) 35000 * (distKm / 80).toInt().coerceAtLeast(1) else 0
                 val title = when(i) {
-                    0 -> "Lộ trình tối ưu chính"
-                    1 -> "Lộ trình phụ thay thế 1"
+                    0 -> "Lộ trình tối ưu chính (Nhanh nhất)"
+                    1 -> "Lộ trình thay thế qua Quốc lộ"
                     else -> "Lộ trình thay thế $i"
                 }
-                options.add(RouteOption(title, polyPoints, steps, distKm, durMin))
+                options.add(RouteOption(title, polyPoints, steps, distKm, durMin, tollFee))
             }
         }
     } catch (_: Exception) {}
 
     if (options.isEmpty()) {
         val fallbackPoints = listOf(start, GeoPoint((start.latitude + end.latitude)/2, (start.longitude + end.longitude)/2), end)
-        val fallbackSteps = listOf(RouteStepItem("Bắt đầu di chuyển thẳng theo tuyến đường chính", 500, "Đường quốc lộ", start))
-        options.add(RouteOption("Lộ trình an toàn", fallbackPoints, fallbackSteps, 12.5, 25))
+        val fallbackSteps = listOf(RouteStepItem("Di chuyển thẳng theo tuyến đường chính", 500, "Đường chính", start))
+        options.add(RouteOption("Lộ trình an toàn dự phòng", fallbackPoints, fallbackSteps, 15.0, 30, 25000))
     }
     return@withContext options
 }
@@ -920,7 +1004,7 @@ fun translateManeuver(type: String, modifier: String, roadName: String): String 
     }
     return when(type) {
         "depart" -> "Xuất phát$r"
-        "arrive" -> "Đến nơi"
+        "arrive" -> "Đến đích"
         else -> "$d$r"
     }
 }
