@@ -78,7 +78,7 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   versionCode = 1
-                  versionName = "3.1"
+                  versionName = "5.0"
               }
 
               compileOptions {
@@ -119,12 +119,14 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:label="Gofa Ô Tô"
+                  android:label="Gofa Ô Tô VIP"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
+                      android:supportsPictureInPicture="true"
+                      android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
                       android:screenOrientation="portrait">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -138,8 +140,8 @@ jobs:
       - name: 5. Biên dịch ra file APK cài đặt
         run: gradle assembleDebug --no-daemon
 
-      - name: 6. Xuất file APK để tải về điện thoại
+      - name: 6. Xuất file APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gofa-Oto-CaMau-DaLat-APK
+          name: Gofa-Oto-VIP-v5-APK
           path: app/build/outputs/apk/debug/app-debug.apk
