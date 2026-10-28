@@ -1,7 +1,6 @@
 package vn.navigation.gofaclone
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
@@ -184,7 +183,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
         onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Tiếng bíp cảnh báo quá tốc độ liên tục
     val toneGen = remember { ToneGenerator(AudioManager.STREAM_ALARM, 100) }
     LaunchedEffect(isOverSpeeding) {
         if (isOverSpeeding) {
@@ -213,7 +211,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
 
         routeSigns.forEach { sign ->
             val iconStr = when(sign.type) { SignType.CAMERA -> "🎥"; SignType.TRAFFIC_LIGHT -> "🚦"; SignType.SPEED_LIMIT -> "🛑" }
-            map.overlays.add(Marker(map).apply { position = GeoPoint(sign.lat, sign.lon); title = "$iconStr${sign.name}"; setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM) })
+            map.overlays.add(Marker(map).apply { position = GeoPoint(sign.lat, sign.lon); title = "$iconStr ${sign.name}"; setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM) })
         }
         map.invalidate()
     }
@@ -241,7 +239,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
                         Location.distanceBetween(loc.latitude, loc.longitude, sign.lat, sign.lon, d)
                         if (d[0] <= 500) {
                             foundSign = sign
-                            activeAlertBanner = "⚠️ Nhắc trước ${d[0].roundToInt()}m:${sign.name}"
+                            activeAlertBanner = "⚠️ Nhắc trước ${d[0].roundToInt()}m: ${sign.name}"
                             if (sign.type == SignType.SPEED_LIMIT) currentSpeedLimit = sign.speedValue
                             
                             if (!spokenAlertIds.contains(sign.id)) {
@@ -260,7 +258,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
     }
     LaunchedEffect(Unit) { permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)) }
 
-    // GIAO DIỆN ẢNH TRONG ẢNH (PiP)
     if (isPipMode) {
         Box(modifier = Modifier.fillMaxSize().background(GofaGreen).border(2.dp, Color.White), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -274,7 +271,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
         return
     }
 
-    // GIAO DIỆN CHÍNH
     Box(modifier = Modifier.fillMaxSize().background(if (isDarkMode) Color(0xFF121212) else Color.White)) {
         AndroidView(
             factory = { ctx ->
@@ -298,7 +294,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
 
         Box(modifier = Modifier.align(Alignment.Center)) { MiniPinkCarCursor(rotationDegrees = vehicleBearing) }
 
-        // Tốc độ góc trên trái
         Box(modifier = Modifier.padding(top = 42.dp, start = 14.dp).size(width = 115.dp, height = 105.dp).align(Alignment.TopStart)) {
             Box(modifier = Modifier.size(78.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(Color.White).border(8.dp, GofaRed, CircleShape), contentAlignment = Alignment.Center) {
                 Text(text = currentSpeedLimit?.toString() ?: "--", color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
@@ -354,7 +349,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        // Thanh dưới cùng
         Row(modifier = Modifier.fillMaxWidth().padding(14.dp).align(Alignment.BottomCenter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (isNavigating) {
                 Button(
@@ -372,7 +366,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        // BẢNG TÌM KIẾM
         if (showSearchSheet) {
             ModalBottomSheet(onDismissRequest = { showSearchSheet = false }, modifier = Modifier.fillMaxHeight(0.95f)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -414,7 +407,6 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        // BẢNG CHỌN LỘ TRÌNH VÀ TẢI 100% BIỂN BÁO
         if (!isNavigating && availableRoutes.isNotEmpty()) {
             Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 90.dp, start = 14.dp, end = 14.dp), shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 10.dp) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -465,7 +457,6 @@ fun MiniPinkCarCursor(rotationDegrees: Float) {
     }
 }
 
-// API
 suspend fun searchOnlineVietnamAddresses(query: String): List<PlaceSearchResult> = withContext(Dispatchers.IO) {
     val list = mutableListOf<PlaceSearchResult>()
     try {
@@ -533,4 +524,30 @@ suspend fun fetch100PercentSignsForRoute(bounds: BoundingBoxData): List<TrafficS
     val results = mutableListOf<TrafficSignNode>()
     try {
         val query = """[out:json][timeout:25];(node["highway"="speed_camera"](${bounds.minLat},${bounds.minLon},${bounds.maxLat},${bounds.maxLon});node["highway"="traffic_signals"](${bounds.minLat},${bounds.minLon},${bounds.maxLat},${bounds.maxLon});way["maxspeed"](${bounds.minLat},${bounds.minLon},${bounds.maxLat},${bounds.maxLon}););out center 150;"""
-        val encoded = URLEncoder.encode(query, "UTF-
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val url = URL("https://overpass-api.de/api/interpreter?data=$encoded")
+        val conn = (url.openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 15000; readTimeout = 15000 }
+        
+        if (conn.responseCode == 200) {
+            val elements = JSONObject(conn.inputStream.bufferedReader().readText()).optJSONArray("elements") ?: return@withContext emptyList()
+            for (i in 0 until elements.length()) {
+                val el = elements.getJSONObject(i)
+                val id = el.optString("id", "")
+                val tags = el.optJSONObject("tags") ?: continue
+                val lat = el.optDouble("lat", el.optJSONObject("center")?.optDouble("lat") ?: 0.0)
+                val lon = el.optDouble("lon", el.optJSONObject("center")?.optDouble("lon") ?: 0.0)
+                
+                if (tags.has("highway") && tags.getString("highway") == "speed_camera") {
+                    val spd = tags.optString("maxspeed", "60").filter { it.isDigit() }.toIntOrNull() ?: 60
+                    results.add(TrafficSignNode(id, SignType.CAMERA, "Camera phạt nguội", lat, lon, spd))
+                } else if (tags.has("highway") && tags.getString("highway") == "traffic_signals") {
+                    results.add(TrafficSignNode(id, SignType.TRAFFIC_LIGHT, "Đèn tín hiệu giao thông", lat, lon))
+                } else if (tags.has("maxspeed")) {
+                    val spd = tags.optString("maxspeed", "50").filter { it.isDigit() }.toIntOrNull() ?: 50
+                    results.add(TrafficSignNode(id, SignType.SPEED_LIMIT, "Giới hạn tốc độ $spd km/h", lat, lon, spd))
+                }
+            }
+        }
+    } catch (_: Exception) {}
+    return@withContext results
+}
