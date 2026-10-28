@@ -112,8 +112,6 @@ fun createOnlineMapTileSource(name: String, lyrsCode: String): OnlineTileSourceB
 }
 
 class MainActivity : ComponentActivity() {
-    private var isPipModeApp = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val osmConfig = Configuration.getInstance()
@@ -126,7 +124,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 val config = LocalConfiguration.current
-                isPipModeApp = config.screenWidthDp < 300
+                val isPipModeApp = config.screenWidthDp < 350
                 GofaOnlineNavigationApp(isPipModeApp, this)
             }
         }
@@ -262,11 +260,13 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
     }
     LaunchedEffect(Unit) { permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)) }
 
-    // GIAO DIỆN ẢNH TRONG ẢNH (PiP) THU NHỎ KHI LÁI XE
+    // GIAO DIỆN ẢNH TRONG ẢNH (PiP)
     if (isPipMode) {
         Box(modifier = Modifier.fillMaxSize().background(GofaGreen).border(2.dp, Color.White), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(if (nextStepItem?.turnType?.contains("left") == true) Icons.Default.TurnLeft else if (nextStepItem?.turnType?.contains("right") == true) Icons.Default.TurnRight else Icons.Default.Straight, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+                // Sửa icon chuẩn
+                val pipIcon = if (nextStepItem?.turnType?.contains("left") == true) Icons.Default.ArrowBack else if (nextStepItem?.turnType?.contains("right") == true) Icons.Default.ArrowForward else Icons.Default.ArrowUpward
+                Icon(pipIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
                 Text("${currentSpeedKmh} km/h", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 Text(nextStepItem?.instruction ?: "Đi thẳng", color = Color.White, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 4.dp))
                 if (isOverSpeeding) { Text("⚠️ QUÁ TỐC ĐỘ!", color = Color.Yellow, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
@@ -275,7 +275,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
         return
     }
 
-    // GIAO DIỆN CHÍNH (FULL SCREEN)
+    // GIAO DIỆN CHÍNH
     Box(modifier = Modifier.fillMaxSize().background(if (isDarkMode) Color(0xFF121212) else Color.White)) {
         AndroidView(
             factory = { ctx ->
@@ -323,15 +323,15 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             Surface(modifier = Modifier.padding(top = 42.dp, start = 136.dp, end = 78.dp).fillMaxWidth().align(Alignment.TopCenter), shape = RoundedCornerShape(16.dp), color = GofaGreen, shadowElevation = 6.dp) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(text = nextStepItem?.instruction ?: "Đi thẳng theo vạch hồng sẫm", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "🚗 Tổng: ${activeRoute!!.totalDistanceKm} km • 💰 Phí: ${activeRoute!!.tollFeesVnd} đ", color = Color.White.copy(0.9f), fontSize = 12.sp)
+                    Text(text = "🚗 Tổng: ${activeRoute!!.totalDistanceKm} km • 💰 Phí: ${activeRoute!!.tollFeesVnd} đ", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
                 }
             }
         }
 
         if (isNavigating && upcomingSign != null) {
-            Surface(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp).width(280.dp), shape = RoundedCornerShape(16.dp), color = Color(0xFF003366).copy(0.95f), shadowElevation = 10.dp) {
+            Surface(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp).width(280.dp), shape = RoundedCornerShape(16.dp), color = Color(0xFF003366).copy(alpha = 0.95f), shadowElevation = 10.dp) {
                 Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val iconVector = when(upcomingSign!!.type) { SignType.CAMERA -> Icons.Default.PhotoCamera; SignType.TRAFFIC_LIGHT -> Icons.Default.Traffic; SignType.SPEED_LIMIT -> Icons.Default.Speed }
+                    val iconVector = when(upcomingSign!!.type) { SignType.CAMERA -> Icons.Default.PhotoCamera; SignType.TRAFFIC_LIGHT -> Icons.Default.Info; SignType.SPEED_LIMIT -> Icons.Default.Warning }
                     Icon(iconVector, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(upcomingSign!!.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -339,13 +339,13 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        Surface(modifier = Modifier.padding(top = 42.dp, end = 14.dp).align(Alignment.TopEnd), shape = RoundedCornerShape(28.dp), color = Color.White.copy(0.95f), shadowElevation = 5.dp) {
+        Surface(modifier = Modifier.padding(top = 42.dp, end = 14.dp).align(Alignment.TopEnd), shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp) {
             Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 IconButton(onClick = { isVoiceEnabled = !isVoiceEnabled }) { Icon(if (isVoiceEnabled) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff, contentDescription = null, tint = GofaGreen, modifier = Modifier.size(28.dp)) }
             }
         }
 
-        Surface(modifier = Modifier.padding(start = 14.dp, bottom = 105.dp).align(Alignment.BottomStart), shape = RoundedCornerShape(28.dp), color = Color.White.copy(0.95f), shadowElevation = 5.dp) {
+        Surface(modifier = Modifier.padding(start = 14.dp, bottom = 105.dp).align(Alignment.BottomStart), shape = RoundedCornerShape(28.dp), color = Color.White.copy(alpha = 0.95f), shadowElevation = 5.dp) {
             Column(modifier = Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(onClick = { followUserGps = !followUserGps; if (followUserGps) mapViewRef?.controller?.animateTo(userLocation) }) {
                     Icon(if (followUserGps) Icons.Filled.Lock else Icons.Outlined.MyLocation, contentDescription = null, tint = GofaGreen, modifier = Modifier.size(26.dp))
@@ -355,7 +355,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        // Thanh dưới cùng (Tìm kiếm / Bắt đầu & Dừng)
+        // Thanh dưới cùng
         Row(modifier = Modifier.fillMaxWidth().padding(14.dp).align(Alignment.BottomCenter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (isNavigating) {
                 Button(
@@ -363,7 +363,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
                     modifier = Modifier.weight(1f).height(58.dp), colors = ButtonDefaults.buttonColors(GofaRed)
                 ) { Text("Kết thúc hành trình", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
             } else {
-                Surface(modifier = Modifier.weight(1f).height(58.dp).clickable { showSearchSheet = true }, shape = RoundedCornerShape(30.dp), color = Color.White.copy(0.97f), shadowElevation = 5.dp) {
+                Surface(modifier = Modifier.weight(1f).height(58.dp).clickable { showSearchSheet = true }, shape = RoundedCornerShape(30.dp), color = Color.White.copy(alpha = 0.97f), shadowElevation = 5.dp) {
                     Row(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(GofaGreen), contentAlignment = Alignment.Center) { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp)) }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -373,7 +373,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
             }
         }
 
-        // BẢNG TÌM KIẾM ĐẨY TRÁNH BÀN PHÍM
+        // BẢNG TÌM KIẾM
         if (showSearchSheet) {
             ModalBottomSheet(onDismissRequest = { showSearchSheet = false }, modifier = Modifier.fillMaxHeight(0.95f).imePadding()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -456,18 +456,17 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
     }
 }
 
-// Icon Ô tô mini hồng
 @Composable
 fun MiniPinkCarCursor(rotationDegrees: Float) {
     Box(modifier = Modifier.size(60.dp).rotate(rotationDegrees), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.size(24.dp, 46.dp)) {
             drawRoundRect(color = RoutePink, size = size, cornerRadius = CornerRadius(12f, 12f))
-            drawRoundRect(color = Color.Black.copy(0.7f), topLeft = androidx.compose.ui.geometry.Offset(4f, 10f), size = androidx.compose.ui.geometry.Size(size.width - 8f, 8f), cornerRadius = CornerRadius(4f, 4f))
+            drawRoundRect(color = Color.Black.copy(alpha = 0.7f), topLeft = androidx.compose.ui.geometry.Offset(4f, 10f), size = androidx.compose.ui.geometry.Size(size.width - 8f, 8f), cornerRadius = CornerRadius(4f, 4f))
         }
     }
 }
 
-// Gọi API
+// API
 suspend fun searchOnlineVietnamAddresses(query: String): List<PlaceSearchResult> = withContext(Dispatchers.IO) {
     val list = mutableListOf<PlaceSearchResult>()
     try {
