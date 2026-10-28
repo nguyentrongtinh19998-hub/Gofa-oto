@@ -1,6 +1,7 @@
 package vn.navigation.gofaclone
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
@@ -117,8 +118,10 @@ class MainActivity : ComponentActivity() {
         osmConfig.userAgentValue = "GofaOtoVietnamNavigation/FINAL"
         val baseDir = File(cacheDir, "osmdroid")
         val tileDir = File(baseDir, "tiles")
-        baseDir.mkdirs(); tileDir.mkdirs()
-        osmConfig.osmdroidBasePath = baseDir; osmConfig.osmdroidTileCache = tileDir
+        baseDir.mkdirs()
+        tileDir.mkdirs()
+        osmConfig.osmdroidBasePath = baseDir
+        osmConfig.osmdroidTileCache = tileDir
 
         setContent {
             MaterialTheme {
@@ -153,9 +156,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
     var isOverSpeeding by remember { mutableStateOf(false) }
 
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
-    var mapLayerMode by remember { mutableIntStateOf(0) }
     var isVoiceEnabled by remember { mutableStateOf(true) }
-    var isDarkMode by remember { mutableStateOf(false) }
 
     var showSearchSheet by remember { mutableStateOf(false) }
     var destInputText by remember { mutableStateOf("") }
@@ -195,7 +196,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
 
     fun refreshMap(map: MapView?) {
         if (map == null) return
-        map.overlays.removeAll { it is Polyline || (it is Marker && it.title?.contains("Điểm") == true || it.title?.contains("🚦") == true || it.title?.contains("🎥") == true || it.title?.contains("🛑") == true) }
+        map.overlays.removeAll { it is Polyline || (it is Marker && (it.title?.contains("Điểm") == true || it.title?.contains("🚦") == true || it.title?.contains("🎥") == true || it.title?.contains("🛑") == true)) }
 
         availableRoutes.forEach { route ->
             if (route != activeRoute) {
@@ -219,39 +220,46 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
         if (perms[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val listener = LocationListener { loc ->
-                currentSpeedKmh = (loc.speed * 3.6f).roundToInt()
-                if (loc.hasBearing()) vehicleBearing = loc.bearing
-                userLocation = GeoPoint(loc.latitude, loc.longitude)
-                if (followUserGps) mapViewRef?.controller?.animateTo(userLocation)
+            
+            // Dùng cú pháp Object để tương thích 100% mọi phiên bản Android cũ
+            val listener = object : LocationListener {
+                override fun onLocationChanged(loc: Location) {
+                    currentSpeedKmh = (loc.speed * 3.6f).roundToInt()
+                    if (loc.hasBearing()) vehicleBearing = loc.bearing
+                    userLocation = GeoPoint(loc.latitude, loc.longitude)
+                    if (followUserGps) mapViewRef?.controller?.animateTo(userLocation)
 
-                isOverSpeeding = currentSpeedLimit != null && currentSpeedKmh > currentSpeedLimit!! && currentSpeedKmh > 3
+                    isOverSpeeding = currentSpeedLimit != null && currentSpeedKmh > currentSpeedLimit!! && currentSpeedKmh > 3
 
-                if (isNavigating && activeRoute != null) {
-                    for (step in activeRoute!!.steps) {
-                        val d = FloatArray(1)
-                        Location.distanceBetween(loc.latitude, loc.longitude, step.location.latitude, step.location.longitude, d)
-                        if (d[0] < 500 && d[0] > 15) { nextStepItem = step; break }
-                    }
-                    var foundSign: TrafficSignNode? = null
-                    for (sign in routeSigns) {
-                        val d = FloatArray(1)
-                        Location.distanceBetween(loc.latitude, loc.longitude, sign.lat, sign.lon, d)
-                        if (d[0] <= 500) {
-                            foundSign = sign
-                            activeAlertBanner = "⚠️ Nhắc trước ${d[0].roundToInt()}m: ${sign.name}"
-                            if (sign.type == SignType.SPEED_LIMIT) currentSpeedLimit = sign.speedValue
-                            
-                            if (!spokenAlertIds.contains(sign.id)) {
-                                spokenAlertIds.add(sign.id)
-                                speak("Chú ý. Phía trước ${d[0].roundToInt()} mét có ${sign.name}.")
-                            }
-                            break
+                    if (isNavigating && activeRoute != null) {
+                        for (step in activeRoute!!.steps) {
+                            val d = FloatArray(1)
+                            Location.distanceBetween(loc.latitude, loc.longitude, step.location.latitude, step.location.longitude, d)
+                            if (d[0] < 500 && d[0] > 15) { nextStepItem = step; break }
                         }
+                        var foundSign: TrafficSignNode? = null
+                        for (sign in routeSigns) {
+                            val d = FloatArray(1)
+                            Location.distanceBetween(loc.latitude, loc.longitude, sign.lat, sign.lon, d)
+                            if (d[0] <= 500) {
+                                foundSign = sign
+                                activeAlertBanner = "⚠️ Nhắc trước ${d[0].roundToInt()}m: ${sign.name}"
+                                if (sign.type == SignType.SPEED_LIMIT) currentSpeedLimit = sign.speedValue
+                                
+                                if (!spokenAlertIds.contains(sign.id)) {
+                                    spokenAlertIds.add(sign.id)
+                                    speak("Chú ý. Phía trước ${d[0].roundToInt()} mét có ${sign.name}.")
+                                }
+                                break
+                            }
+                        }
+                        upcomingSign = foundSign
+                        if (foundSign == null) activeAlertBanner = null
                     }
-                    upcomingSign = foundSign
-                    if (foundSign == null) activeAlertBanner = null
                 }
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
             }
             try { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, listener) } catch (_: Exception) {}
         }
@@ -271,7 +279,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
         return
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(if (isDarkMode) Color(0xFF121212) else Color.White)) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         AndroidView(
             factory = { ctx ->
                 MapView(ctx).apply {
@@ -316,7 +324,7 @@ fun GofaOnlineNavigationApp(isPipMode: Boolean, activity: Activity) {
         if (isNavigating && activeRoute != null) {
             Surface(modifier = Modifier.padding(top = 42.dp, start = 136.dp, end = 78.dp).fillMaxWidth().align(Alignment.TopCenter), shape = RoundedCornerShape(16.dp), color = GofaGreen, shadowElevation = 6.dp) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(text = nextStepItem?.instruction ?: "Đi thẳng theo vạch hồng sẫm", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(text = nextStepItem?.instruction ?: "Đi thẳng theo lộ trình", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     Text(text = "🚗 Tổng: ${activeRoute!!.totalDistanceKm} km • 💰 Phí: ${activeRoute!!.tollFeesVnd} đ", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
                 }
             }
